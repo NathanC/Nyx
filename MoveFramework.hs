@@ -6,6 +6,7 @@ module MoveFramework(
   fromRawNum,
   makeMove,
   constructMove,
+  allPseudoLegalMoves,
   Move (..)
   ) where 
 

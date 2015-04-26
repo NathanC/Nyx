@@ -19,39 +19,37 @@ import Search
 
 import System.Exit
 import Control.Exception hiding (evaluate)
-import Text.Read
-import System.Console.ANSI (clearScreen)
 
+data GameInfo = GameInfo {
+  ply :: Int,
+  playerColor :: Color
+}
 
 data GlobalInfo = GlobalInfo {
   pos :: Position,
   photoMap :: M.Map Piece Image,
   imageMap :: M.Map (Int,Int) ImageItem,
   selected :: Maybe (Int,Int),
-  cnv :: Canvas 
+  cnv :: Canvas,
+  gameInfo :: GameInfo
 }
+
+
 
 main:: IO ()
 main = do 
+  putStrLn "Welcome to the Nyx Chess Engine!"
+  putStrLn "Please enter the search depth: "
+  ply' <- getLine
+  gui $ GameInfo (read ply') White
+
+gui info = do 
     darkWood <- newImage [filename "resources/darkWood.png"]
     lightWood <- newImage [filename "resources/whiteWood.png"]
     border <- newImage [filename "resources/border.png"]
 
     w <- initHTk [maxSize (500,500), minSize (500,500), text "Nyx"]    
     cnv' <- newCanvas w [width 500, height 500]
-
-
-
-
-
-    --whiteSquare <- newBitMap [filename "black.bmp"]
-    --blackSquare <- newBitMap [filename "black.xbm"]
-
-    --mapM  (\(x,y) -> createRectangle c [position (50*x,50*y), width 50, height 50])  [(x,y) | x <- [0..7], y<-[0..7]]
-
-
-    --(createBitMapItem c [position (0,0), bitmap whiteSquare])
-    
 
     -- generate board and border
     mapM (\((x,y),i)-> createImageItem cnv' [position (50*x,50*y), canvAnchor NorthWest, photo i]) $ zip [(x,y) | x <- [1..8], y<-[1..8]] $ cycle (take 8 (cycle [lightWood,darkWood]) ++ take 8 (cycle [darkWood,lightWood]))
@@ -62,14 +60,13 @@ main = do
     (click, _) <- bind cnv' [WishEvent [] (ButtonPress (Just 1))]
     (release,_) <- bind cnv' [WishEvent [] (ButtonRelease (Just 1))]
     (motion, _ ) <- bind cnv' [WishEvent [Button1] Motion]
-    --Button1
 
     let pos' = newPosition
     
     photoMap' <- genPhotoMap
     imageMap' <- renderPosition pos' cnv' photoMap'
 
-    globalInfoMVar <- newMVar $ GlobalInfo pos' photoMap' imageMap' Nothing cnv'
+    globalInfoMVar <- newMVar $ GlobalInfo pos' photoMap' imageMap' Nothing cnv' info
 
     spawnEvent $ forever $ do
 
@@ -86,6 +83,10 @@ main = do
 
     pack cnv' []
     finishHTk
+
+
+    
+
 
 
 
@@ -118,9 +119,9 @@ releaseHandler globalInfoMVar i = do
               mapM_ destroy $ M.elems $ imageMap globalInfo
               newImageMap <- renderPosition nextPosition (cnv globalInfo) (photoMap globalInfo)
               putMVar globalInfoMVar globalInfo{pos = nextPosition, imageMap = newImageMap, selected = Nothing}              
-              putStrLn "calculating response.."
+              
               calculateAndMakeMove globalInfoMVar  
-              putStrLn "made move."            
+                         
            else do
              (imageMap globalInfo ! starting)  # position (toCanvasSquare starting)
              putMVar globalInfoMVar globalInfo{selected = Nothing}
@@ -128,15 +129,22 @@ releaseHandler globalInfoMVar i = do
 
 calculateAndMakeMove globalInfoMVar = do
   globalInfo <- takeMVar globalInfoMVar
+  forFun <- randomFrom ponderingStatements
+  putStrLn forFun
 
-  let (bestMove, _) = calculateMove (pos globalInfo ) 4
+  let (bestMove@(Move starting ending _ _), _) = calculateMove (pos globalInfo ) $ ply $ gameInfo globalInfo
 
   nextPosition <- return $! makeMove bestMove $ pos globalInfo
   mapM_ destroy $ M.elems $ imageMap globalInfo
   newImageMap <- renderPosition nextPosition (cnv globalInfo) (photoMap globalInfo)
-  putMVar globalInfoMVar globalInfo{pos = nextPosition, imageMap = newImageMap}              
-                
+  putMVar globalInfoMVar globalInfo{pos = nextPosition, imageMap = newImageMap}
+  putStrLn $ "I'll move from " ++ printNice starting ++ " to " ++ printNice ending ++ ".\n"          
+  
+  where printNice (f,r) = fileCharMap ! f : show r            
 
+randomFrom xs = do 
+  index <- getStdRandom (randomR (0,(length xs)-1))
+  return $ xs !! index
 
 
 motionHandler globalInfoMVar i = do
@@ -196,18 +204,6 @@ renderPosition pos cnv photos = do
 
 
 
-movePiece m p e = do
-  withMVar m $ \b -> case b of
-                      True -> do p # position (x e, y e)
-                                 return ()
-                      False -> return ()
-
-squareStr Nothing = "the border"
-squareStr (Just (x,y)) = f : r
-    where f =  fileCharMap ! (fileMap ! x) 
-          r =  show $ rankMap ! y
-
-
 toCanvasSquare :: (Int,Int) -> (Distance,Distance)
 toCanvasSquare (f,r) = (Distance (25+50*f), Distance (25+50*(9-r)))
 
@@ -234,6 +230,10 @@ nearest x = if distance > 25
     where (val,distance) = minimumBy (\(_,b1) (_,b2) -> compare b1 b2) [ (n, abs (n-x)) | n <- [75,125..425]  ]  
 
 
+
+
+
+-- Various maps used for translating coordinate systems
 rankMap :: M.Map Distance Int
 rankMap = M.fromList $ zip [75,125..425] [8,7..1]
 
@@ -244,76 +244,16 @@ fileCharMap :: M.Map Int Char
 fileCharMap = M.fromList $ zip [1..8] ['a'..'h']
 
 
-
-
---main = do
---    mainLoop pos "Welcome to Nyx Chess Engine!"
-
-{-
-mainLoop :: Position -> String -> IO ()
-mainLoop pos buffer = do
-    clearScreen
-    putStrLn $ prettyPrint pos
-    putStr "\n"
-    putStrLn $ "message: " ++ buffer 
-    putStrLn $ "Current color to move: " ++ show (toMove pos)
-
-    putStr "Enter next move: "
-    input <- getLine 
-
-    if input == "quit"
-       then exitWith ExitSuccess
-       else return ()
-
-
-    let (starting, ending) = parseMove input
-
-    if (fullyLegal starting ending pos)
-        then mainLoop ((move starting ending pos){toMove = succThrough (toMove pos) }) $ "Last move was " ++ input
-        else mainLoop pos "Illegal move or incorrect move formatting."
-
-
--- | Simple move parse function. Needs to be of form "a1-b4". Not flexible, but simple. Returns values of -1 in the moves if something goes wrong
-parseMove :: String -> ((Int,Int),(Int,Int))
-parseMove str
-    | length str < 5 = ((-1,-1),(-1,-1))
-    | otherwise = (parseSquare starting, parseSquare ending)
-  where starting = ((str !! 0), (str !! 1))
-        ending = ((str !! 3), (str !! 4))
-        parseSquare (a,b) = (resolve a, parse [b])
-        parse a = case (readMaybe a) of
-                    Nothing -> -1
-                    Just v ->  v
-        resolve :: Char -> Int 
-        resolve 'a' = 1 
-        resolve 'b' = 2
-        resolve 'c' = 3
-        resolve 'd' = 4
-        resolve 'e' = 5
-        resolve 'f' = 6
-        resolve 'g' = 7
-        resolve 'h' = 8
-        resolve  _ = -1
--}
-
-
-{-
--- nieve mini-max algorithm
-bestMove :: Position -> Depth -> Color -> ((Int,Int), Maybe Piece)
-bestMove _ 0 _ = 
-bestMove pos x computerColor=  
-
-    if (toMove pos) == computerColor 
-        then 
-
-        else
-
-    bestMove $ legalMoves pos 
-
-
-    --generate pos for each legal move for color
-
-    -}
-
---makeMove :: (Square, Square, Maybe Piece, Maybe Piece) -> Position
---makeMove :: 
+ponderingStatements = [
+  "Hmm, interesting..",
+  "Ha! You sure that's a good move?",
+  "Well, well, well..",
+  "You play like a drunken dwarf!",
+  "Good move!",
+  "Meh..",
+  "Let me think about that for a bit...",
+  "That's a tough one.",
+  "That was a slip of the hand... right?",
+  "Nice try, but..",
+  "Clever.",
+  "I think you missed something..."]

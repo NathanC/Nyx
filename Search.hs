@@ -22,7 +22,7 @@ calculateMove pos depth = (fst $ minimumBy (\(_,a) (_,b) -> compare a b) moveEva
 
     where  candidateMoves = allLegalMoves pos
            moveEvals = [(m, alphabeta (makeMove m pos) depth (-infinity) infinity True) | m <- candidateMoves ]
-
+           --moveEvals = [(m, minimax (makeMove m pos) depth True) | m <- candidateMoves ]
 
 {-
 calculateMove :: Position -> Int -> (Move, Maybe EndCondition)
@@ -37,6 +37,10 @@ calculateMove pos depth = (fst $ minimumBy (\(_,a) (_,b) -> compare a b) moveEva
 alphabeta :: Position -> Int -> Float -> Float -> Bool -> Float
 alphabeta pos depth alpha beta maximizingPlayer 
     | depth == 0 = evaluate pos
+    | null childPositions = 
+        if (toMove pos) ==  White
+          then (-infinity)
+          else infinity
     | maximizingPlayer = maximizingPlayerFunc (-infinity) depth alpha beta childPositions
     | not maximizingPlayer = minimizingPlayerFunc infinity depth alpha beta childPositions
 
