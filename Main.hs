@@ -15,6 +15,7 @@ import qualified Data.IntMap as IM
 import BoardFramework
 import MoveFramework
 import PositionEvaluation 
+import Search
 
 import System.Exit
 import Control.Exception hiding (evaluate)
@@ -128,14 +129,9 @@ releaseHandler globalInfoMVar i = do
 calculateAndMakeMove globalInfoMVar = do
   globalInfo <- takeMVar globalInfoMVar
 
-  let currentPos = pos globalInfo
-      candidateMoves = allLegalMoves currentPos
-  
-  moveEvals <- mapM (\m -> do {ev <- minimax (makeMove m currentPos) 3 True; return (m,ev) })  candidateMoves -- [(m, minimax (makeMove m currentPos) 3 True) | m <- candidateMoves ]
+  let (bestMove, _) = calculateMove (pos globalInfo ) 4
 
-  let bestMove = fst $ minimumBy (\(_,a) (_,b) -> compare a b) moveEvals
-      
-  nextPosition <- return $! makeMove bestMove currentPos
+  nextPosition <- return $! makeMove bestMove $ pos globalInfo
   mapM_ destroy $ M.elems $ imageMap globalInfo
   newImageMap <- renderPosition nextPosition (cnv globalInfo) (photoMap globalInfo)
   putMVar globalInfoMVar globalInfo{pos = nextPosition, imageMap = newImageMap}              
@@ -249,23 +245,6 @@ fileCharMap = M.fromList $ zip [1..8] ['a'..'h']
 
 
 
-minimax :: Position -> Int -> Bool -> IO Float
-minimax pos depth maximizingPlayer 
-    | depth == 0 = do
-         let ev = evaluate pos
-         return ev
-    | null childPositions = 
-        if (toMove pos) ==  White
-          then return (-(1/0))
-          else return (1/0)
-    | maximizingPlayer = do
-        evals <- mapM (\p -> minimax p (depth-1) False ) childPositions
-        return $ maximum $ evals ++ [-(1/0)]
-    | not maximizingPlayer = do
-        evals <- mapM (\p -> minimax p (depth-1) True ) childPositions
-        return $ minimum $ evals ++ [1/0]
-
-  where childPositions = map (\m -> makeMove m pos) $ allLegalMoves pos
 
 --main = do
 --    mainLoop pos "Welcome to Nyx Chess Engine!"
