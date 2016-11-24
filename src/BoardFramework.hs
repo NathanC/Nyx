@@ -29,6 +29,7 @@ data Position = Position {
                  , enPassant :: Maybe Int
                  , castleRights :: [CastleType]
                  , toMove :: Color
+                 , hasCastled :: [CastleType]
                 }
                 deriving Show
 
@@ -102,7 +103,7 @@ isKing _ = False
 
 
 newPosition :: Position
-newPosition = Position newBoard Nothing [WhiteKingside, WhiteQueenside, BlackKingside, BlackQueenside] White 
+newPosition = Position newBoard Nothing [WhiteKingside, WhiteQueenside, BlackKingside, BlackQueenside] White []
 
 newBoard :: IntMap Piece
 newBoard = fromList $ [(x,Piece White c) | (x,c) <- zip [1..8] [Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook]] ++

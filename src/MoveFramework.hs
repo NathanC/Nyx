@@ -17,17 +17,17 @@ import Data.IntMap ((!))
 
 import Data.Maybe (mapMaybe, isNothing)
 import Data.List.Split (chunksOf)
-import Data.List (intercalate, intersperse)
+import Data.List (intercalate, intersperse, delete)
 
 import qualified Data.Map as M
 
-data SpecialCase = EnPassant Square | Promotion Piece | Castle CastleType deriving Show
+data SpecialCase = EnPassant Square | Promotion Piece | Castle CastleType deriving (Show, Eq)
 
 type Square = (Int,Int)
 type Capture = Piece
 
 
-data Move = Move Square Square (Maybe Capture) (Maybe SpecialCase) deriving Show
+data Move = Move Square Square (Maybe Capture) (Maybe SpecialCase) deriving (Show, Eq)
 --represent a move from Square to Square, with SpecialCase present iff the move is not a brute force move that simply moves 
 --the first square to the second square, replacing the second square if possible.
 --a move gives enough info to map from Board -> Board. 
@@ -46,6 +46,16 @@ constructMove starting@(f1,r1) ending@(f2,r2) pos =
          | r2 == 1 -> Move starting ending maybeCapture (Just (Promotion (Piece Black Queen)))
          | otherwise -> Move starting ending maybeCapture Nothing
 
+    (Piece White King) 
+         | starting == (5,1) && ending == (7,1) -> Move starting ending Nothing (Just (Castle WhiteKingside))
+         | starting == (5,1) && ending == (3,1) -> Move starting ending Nothing (Just (Castle WhiteQueenside))
+         | otherwise -> Move starting ending maybeCapture Nothing
+
+    (Piece Black King) 
+         | starting == (5,8) && ending == (7,8) -> Move starting ending Nothing (Just (Castle BlackKingside))
+         | starting == (5,8) && ending == (3,8) -> Move starting ending Nothing (Just (Castle BlackQueenside))
+         | otherwise -> Move starting ending maybeCapture Nothing
+
     _ -> Move starting ending maybeCapture Nothing
 
     --_ -> Move starting ending maybeCapture Nothing
@@ -62,10 +72,22 @@ makeMove (Move starting ending mCap mSC) pos = pos {
                     else Nothing
     , toMove = switchColor currentColor
     , board = newBoard
-    
+    , castleRights = case starting of 
+        (5,1) -> delete WhiteKingside $ delete WhiteQueenside currentCastleRights
+        (8,1) -> delete WhiteKingside currentCastleRights
+        (1,1) -> delete WhiteQueenside currentCastleRights
+        (5,8) -> delete BlackKingside $ delete BlackQueenside currentCastleRights
+        (8,8) -> delete BlackKingside currentCastleRights
+        (1,8) -> delete BlackQueenside currentCastleRights
+        _ -> currentCastleRights
+    ,  hasCastled = case mSC of
+          (Just (Castle ct)) -> ct : (hasCastled pos)
+          _ -> hasCastled pos
+
     }-- add en-pessant state and changing castle rights
 
-  where triggersEnPassantState (_,2) (_,4) = isPawn movingPiece
+  where currentCastleRights = castleRights pos
+        triggersEnPassantState (_,2) (_,4) = isPawn movingPiece
         triggersEnPassantState (_,7) (_,5) = isPawn movingPiece
         triggersEnPassantState   _     _   = False 
 
@@ -73,6 +95,8 @@ makeMove (Move starting ending mCap mSC) pos = pos {
         enPassantSquare (f,5) = toRawNum (f,6)
 
         movingPiece = (board pos) ! (toRawNum starting)
+        rookAt sq = (board pos) ! sq
+
 
         currentColor = toMove pos
         b = board pos
@@ -86,12 +110,25 @@ makeMove (Move starting ending mCap mSC) pos = pos {
 
               Promotion piece -> IM.insert (toRawNum ending) piece $ IM.delete (toRawNum starting) b
 
-              --Castle castleType -> 
+              Castle castleType -> case castleType of
+                WhiteKingside ->  IM.insert (6) (rookAt 8) $  IM.delete 8 $ 
+                                     IM.insert (toRawNum ending) movingPiece $ IM.delete (toRawNum starting) b 
+
+                WhiteQueenside -> IM.insert 4 (rookAt 1) $  IM.delete 1 $ 
+                                     IM.insert (toRawNum ending) movingPiece $ IM.delete (toRawNum starting) b 
+
+                BlackKingside -> IM.insert (62) (rookAt 64) $  IM.delete 64 $ 
+                                     IM.insert (toRawNum ending) movingPiece $ IM.delete (toRawNum starting) b 
+
+                BlackQueenside -> IM.insert (60) (rookAt 57) $  IM.delete 57 $ 
+                                     IM.insert (toRawNum ending) movingPiece $ IM.delete (toRawNum starting) b 
+
 
 
 -- | Returns a list of all the fully legal moves in a given position, for a certain color
+-- this is not a light operation! involves on average generating 40*40 moves! 
 allLegalMoves :: Position -> [Move]
-allLegalMoves pos = filter legal $ allPseudoLegalMoves pos 
+allLegalMoves pos = (fullyLegalCastleMoves pos) ++ (filter legal (allPseudoLegalMoves pos)) 
 
   where legal mv = if null [ m | m@(Move _ _ (Just (Piece _ King)) _) <- (allPseudoLegalMoves (makeMove mv pos))]  
                       then True
@@ -243,6 +280,12 @@ pseudoLegalMoves piece starting pos
 
 
 -- | not as a filter for allPseudoLegalMoves
+
+
+fullyLegal :: Move -> Position -> Bool
+fullyLegal mv pos = mv `elem` (allLegalMoves pos)
+
+{--
 fullyLegal :: Move -> Position -> Bool 
 fullyLegal mv@(Move starting ending _ _) pos =
   case maybePiece of 
@@ -261,7 +304,40 @@ fullyLegal mv@(Move starting ending _ _) pos =
   where b = board pos
         maybePiece = IM.lookup (toRawNum starting) b
 
+--}
 
+fullyLegalCastleMoves :: Position -> [Move]
+fullyLegalCastleMoves pos = mapMaybe (\r -> genMove r currentColor) (castleRights pos)
+ 
+  where currentColor = toMove pos  
+        b = board pos 
+        attacksAny (Move _ ending _ _ ) squares = any (\s -> s == ending) squares 
+        otherPseudoLegalMoves = allPseudoLegalMoves (pos{toMove = switchColor currentColor})
+        genMove WhiteKingside White = 
+          if (IM.notMember 6 b && IM.notMember 7 b)  
+            then if any (\m -> m `attacksAny` [(5,1),(6,1),(7,1)]) otherPseudoLegalMoves
+                   then Nothing 
+                   else Just $ Move (5,1) (7,1) Nothing (Just (Castle WhiteKingside))
+            else Nothing
+        genMove WhiteQueenside White = 
+          if (IM.notMember 2 b && IM.notMember 3 b && IM.notMember 4 b)  
+            then if any (\m -> m `attacksAny` [(3,1),(4,1),(5,1)] ) otherPseudoLegalMoves
+                   then Nothing
+                   else Just $ Move (5,1) (3,1) Nothing (Just (Castle WhiteQueenside)) 
+            else Nothing
+        genMove BlackKingside Black =
+          if (IM.notMember 62 b && IM.notMember 63 b)  
+            then if any (\m -> m `attacksAny` [(5,8),(6,8),(7,8)]) otherPseudoLegalMoves
+                    then Nothing 
+                    else Just $ Move (5,8) (7,8) Nothing (Just (Castle BlackKingside))
+            else Nothing 
+        genMove BlackQueenside Black = 
+          if (IM.notMember 58 b && IM.notMember 59 b && IM.notMember 60 b)  
+            then if any (\m -> m `attacksAny` [(3,8),(4,8),(5,8)] ) otherPseudoLegalMoves
+                   then Nothing
+                   else Just $ Move (5,8) (3,8) Nothing (Just (Castle BlackQueenside)) 
+            else Nothing
+        genMove _ _ = Nothing
 
 
 {-  
@@ -270,15 +346,16 @@ allmoves = map trace allpieces of color
 
 legalMove for bishop = traceUR + traceUL + traceDL + traceDR 
 
-57 58 59 60 61 62 63 64
-49 50 51 52 53 54 55 56
-41 42 43 44 45 46 47 48
-33 34 35 36 37 38 39 40
-25 26 27 28 29 30 31 32
-17 18 19 20 21 22 23 24
-9  10 11 12 13 14 15 16
-1  2  3  4  5  6  7  8  
-
+8 - 57 58 59 60 61 62 63 64
+7 - 49 50 51 52 53 54 55 56
+6 - 41 42 43 44 45 46 47 48
+5 - 33 34 35 36 37 38 39 40
+4 - 25 26 27 28 29 30 31 32
+3 - 17 18 19 20 21 22 23 24
+2 - 9  10 11 12 13 14 15 16
+1 - 1  2  3  4  5  6  7  8  
+  --------------------------  
+    1  2  3  4  5  6  7  8
 
 type Square = (File,Rank) 
 type Rank = Int
