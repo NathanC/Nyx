@@ -144,7 +144,7 @@ calculateAndMakeMove globalInfoMVar globalInfo = do
   -- display a fun message
   randomFrom ponderingStatements >>= putStrLn
  
-  let (bestMove@(Move starting ending _ _), _) = calculateMove (pos globalInfo ) $ ply $ gameInfo globalInfo
+  let (bestMove@(Move starting ending _ _), _) = calculateMove (pos globalInfo) $ ply $ gameInfo globalInfo
 
   nextPosition <- return $! makeMove bestMove $ pos globalInfo
   mapM_ destroy $ M.elems $ imageMap globalInfo

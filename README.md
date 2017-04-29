@@ -4,6 +4,8 @@ This was written for my senior thesis. While performance is of interest to me, i
 
 To run, first make sure you have `Tk` installed on your system and then install the Nyx package with `cabal`.
 
+It builds with multithreading enabled, and the evaluation function can evaluate moves in parallel. Run as `Nyx +RTS -N` to leverage this.
+
 This implementation isn't fully finished or polished-- the search function isn't efficient enough, non-Queen promotions aren't supported, and draw-by-repetition isn't implemented.
 
 ![Screenshot](https://i.imgur.com/exoJm1n.png)

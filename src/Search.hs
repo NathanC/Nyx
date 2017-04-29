@@ -8,28 +8,29 @@ import MoveFramework
 import PositionEvaluation
 
 import Data.List(minimumBy,sortBy)
+import Control.Parallel.Strategies
+import Control.DeepSeq
 
 -- This module is used to determine the best move in a given position
 
---to use the Infinity val as a float in a cleaner way
+-- To use the Infinity val as a float in a cleaner way
 infinity :: Float
 infinity = (1/0)
 
 data EndCondition = Checkmate | Draw 
 
+-- Needed for the "rdeepseq" parMap strategy
+instance NFData Move where 
+   rnf _ = ()
+
+-- This function searches for the best move it can find, and returns it (along with a potential endcondition flag)
+-- The different legal moves are evaluated in parallel 
 calculateMove :: Position -> Int -> (Move, Maybe EndCondition)
 calculateMove pos depth = (fst $ minimumBy (\(_,a) (_,b) -> compare a b) moveEvals, Nothing)
 
-    where  candidateMoves = allLegalMoves pos
-           moveEvals = [(m, alphabeta (makeMove m pos) depth (-infinity) infinity True) | m <- candidateMoves ]
-
-{-
-calculateMove :: Position -> Int -> (Move, Maybe EndCondition)
-calculateMove pos depth = (fst $ minimumBy (\(_,a) (_,b) -> compare a b) moveEvals, Nothing)
-
-    where  candidateMoves = allLegalMoves pos
-           moveEvals = [(m, minimax (makeMove m pos) depth True) | m <- candidateMoves ]
--}
+    where  evaluateMove m = (m, alphabeta (makeMove m pos) depth (-infinity) infinity True) 
+           candidateMoves = allLegalMoves pos
+           moveEvals = parMap rdeepseq evaluateMove candidateMoves
 
 -- need to implement null childPositions case and checkmate stuff 
 alphabeta :: Position -> Int -> Float -> Float -> Bool -> Float
@@ -72,6 +73,3 @@ minimax pos depth maximizingPlayer
 
   where childPositions = map (\m -> makeMove m pos) $ allLegalMoves pos
 
---minimax2 :: Position -> Int -> Bool -> Float 
---minimax2 pos depth maximizingPlayer 
---   | depth == 0 = evaluatePos 
